@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>PONG NEON - Móvil y PC</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  
+  body {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: 'Courier New', monospace;
+    color: #0ff;
+    overflow: hidden;
+  }
+  
+  h1 {
+    text-shadow: 0 0 10px #0ff, 0 0 20px #0ff;
+    letter-spacing: 8px;
+    margin: 10px;
+    font-size: clamp(20px, 5vw, 32px);
+  }
+  
+  #gameContainer {
+    position: relative;
+    width: 100%;
+    max-width: 800px;
+    display: flex;
+    justify-content: center;
+  }
+  
+  canvas {
+    border: 2px solid #0ff;
+    box-shadow: 0 0 20px #0ff, inset 0 0 20px rgba(0,255,255,0.2);
+    background: #050510;
+    max-width: 100%;
+    height: auto;
+  }
+  
+  .touch-controls {
+    position: absolute;
+    bottom: 20px;
+    width: 100%;
+    display: none;
+    justify-content: space-between;
+    padding: 0 20px;
+    pointer-events: none;
+  }
+  
+  .touch-btn {
+    width: 80px;
+    height: 80px;
+    background: rgba(0, 255, 255, 0.3);
+    border: 2px solid #0ff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    color: #0ff;
+    pointer-events: auto;
+    touch-action: manipulation;
+    box-shadow: 0 0 15px #0ff;
+  }
+  
+  .touch-btn:active {
+    background: rgba(0, 255, 255, 0.6);
+    transform: scale(0.95);
+  }
+  
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  #info {
+    margin-top: 10px;
+    font-size: clamp(10px, 3vw, 14px);
+    opacity: 0.8;
+    text-align: center;
+    padding: 0 10px;
+  }
+  
+  #modeBtn {
+    margin-top: 10px;
+    padding: 10px 20px;
+    background: transparent;
+    border: 2px solid #f0f;
+    color: #f0f;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 0 10px #f0f;
+    text-shadow: 0 0 5px #f0f;
+  }
+  
+  #modeBtn:active {
+    background: rgba(255, 0, 255, 0.3);
+  }
+  
+  @media (max-width: 768px) {
+    .touch-controls {
+      display: flex;
+    }
+    #info {
+      display: none;
+    }
+  }
+</style>
+</head>
+<body>
+  <h1>P O N G</h1>
+  <div id="gameContainer">
+    <canvas id="game" width="800" height="500"></canvas>
+    <div class="touch-controls">
+      <div class="control-group">
+        <div class="touch-btn" id="p1Up">▲</div>
+        <div class="touch-btn" id="p1Down">▼</div>
+      </div>
+      <div class="control-group" id="p2Controls">
+        <div class="touch-btn" id="p2Up">▲</div>
+        <div class="touch-btn" id="p2Down">▼</div>
+      </div>
+    </div>
+  </div>
+  <div id="info">W/S = Jugador 1 | ↑/↓ = Jugador 2 | ESPACIO = Pausa | M = Modo IA/2P</div>
+  <button id="modeBtn">Cambiar Modo: VS IA</button>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+
+let paused = true;
+let vsAI = true;
+let score1 = 0;
+let score2 = 0;
+const WIN_SCORE = 7;
+
+class Paddle {
+  constructor(x, color) {
+    this.w = 12;
+    this.h = 80;
+    this.x = x;
+    this.y = H / 2 - this.h / 2;
+    this.speed = 6;
+    this.color = color;
+    this.dy = 0;
+  }
+  draw() {
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = this.color;
+    ctx.fillStyle = this.color;
+    ctx.fillRect(this.x, this.y, this.w, this.h);
+    ctx.shadowBlur = 0;
+  }
+  update() {
+    this.y += this.dy;
+    if (this.y < 0) this.y = 0;
+    if (this.y + this.h > H) this.y = H - this.h;
+  }
+}
+
+class Ball {
+  constructor() {
+    this.size = 10;
+    this.reset();
+  }
+  reset() {
+    this.x = W / 2;
+    this.y = H / 2;
+    this.vx = (Math.random() > 0.5 ? 1 : -1) * 5;
+    this.vy = (Math.random() * 4 - 2);
+    this.trail = [];
+  }
+  update() {
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > 12) this.trail.shift();
+    this.x += this.vx;
+    this.y += this.vy;
+    if (this.y < 0 || this.y + this.size > H) {
+      this.vy *= -1;
+      beep(220, 0.05);
+    }
+  }
+  draw() {
+    for (let i = 0; i < this.trail.length; i++) {
+      const t = this.trail[i];
+      ctx.globalAlpha = i / this.trail.length * 0.5;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(t.x, t.y, this.size, this.size);
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = '#fff';
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(this.x, this.y, this.size, this.size);
+    ctx.shadowBlur = 0;
+  }
+}
+
+const particles = [];
+function spawnParticles(x, y, color) {
+  for (let i = 0; i < 15; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6,
+      life: 30,
+      color
+    });
+  }
+}
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life / 30;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, 3, 3);
+  });
+  ctx.globalAlpha = 1;
+}
+
+let audioCtx;
+function beep(freq, duration) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+const paddle1 = new Paddle(20, '#0ff');
+const paddle2 = new Paddle(W - 32, '#f0f');
+const ball = new Ball();
+
+const keys = {};
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.code === 'Space') {
+    if (score1 >= WIN_SCORE || score2 >= WIN_SCORE) {
+      score1 = 0;
+      score2 = 0;
+    }
+    paused = !paused;
+    if (!paused && score1 === 0 && score2 === 0) ball.reset();
+  }
+  if (e.key.toLowerCase() === 'm') {
+    toggleMode();
+  }
+});
+document.addEventListener('keyup', e => keys[e.key] = false);
+
+const p1Up = document.getElementById('p1Up');
+const p1Down = document.getElementById('p1Down');
+const p2Up = document.getElementById('p2Up');
+const p2Down = document.getElementById('p2Down');
+
+function addTouchControl(element, action) {
+  element.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    action(true);
+  });
+  element.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    action(false);
+  });
+  element.addEventListener('mousedown', (e) => {
+    action(true);
+  });
+  element.addEventListener('mouseup', (e) => {
+    action(false);
+  });
+  element.addEventListener('mouseleave', (e) => {
+    action(false);
+  });
+}
+
+addTouchControl(p1Up, (pressed) => {
+  if (pressed) keys['w'] = true;
+  else keys['w'] = false;
+});
+
+addTouchControl(p1Down, (pressed) => {
+  if (pressed) keys['s'] = true;
+  else keys['s'] = false;
+});
+
+addTouchControl(p2Up, (pressed) => {
+  if (pressed) keys['ArrowUp'] = true;
+  else keys['ArrowUp'] = false;
+});
+
+addTouchControl(p2Down, (pressed) => {
+  if (pressed) keys['ArrowDown'] = true;
+  else keys['ArrowDown'] = false;
+});
+
+function updateAI() {
+  const center = paddle2.y + paddle2.h / 2;
+  const target = ball.y + ball.size / 2;
+  if (ball.vx < 0) {
+    if (center < H / 2 - 10) paddle2.dy = 4;
+    else if (center > H / 2 + 10) paddle2.dy = -4;
+    else paddle2.dy = 0;
+  } else {
+    if (target < center - 10) paddle2.dy = -5;
+    else if (target > center + 10) paddle2.dy = 5;
+    else paddle2.dy = 0;
+  }
+}
+
+function checkCollision() {
+  if (ball.x < paddle1.x + paddle1.w &&
+      ball.x + ball.size > paddle1.x &&
+      ball.y < paddle1.y + paddle1.h &&
+      ball.y + ball.size > paddle1.y &&
+      ball.vx < 0) {
+    ball.vx *= -1.05;
+    const hit = (ball.y - paddle1.y) / paddle1.h - 0.5;
+    ball.vy = hit * 8;
+    spawnParticles(ball.x, ball.y, '#0ff');
+    beep(440, 0.1);
+  }
+  if (ball.x < paddle2.x + paddle2.w &&
+      ball.x + ball.size > paddle2.x &&
+      ball.y < paddle2.y + paddle2.h &&
+      ball.y + ball.size > paddle2.y &&
+      ball.vx > 0) {
+    ball.vx *= -1.05;
+    const hit = (ball.y - paddle2.y) / paddle2.h - 0.5;
+    ball.vy = hit * 8;
+    spawnParticles(ball.x, ball.y, '#f0f');
+    beep(440, 0.1);
+  }
+  if (ball.x < 0) {
+    score2++;
+    beep(110, 0.3);
+    ball.reset();
+  }
+  if (ball.x > W) {
+    score1++;
+    beep(110, 0.3);
+    ball.reset();
+  }
+}
+
+function drawUI() {
+  ctx.fillStyle = '#0ff';
+  ctx.font = '48px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText(score1, W / 4, 60);
+  ctx.fillStyle = '#f0f';
+  ctx.fillText(score2, (W / 4) * 3, 60);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.setLineDash([10, 10]);
+  ctx.beginPath();
+  ctx.moveTo(W / 2, 0);
+  ctx.lineTo(W / 2, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (paused) {
+    ctx.fillStyle = '#fff';
+    ctx.font = '24px Courier New';
+    ctx.fillText('PULSA ESPACIO O TOCA PARA EMPEZAR', W / 2, H / 2);
+    ctx.font = '16px Courier New';
+    ctx.fillText('Modo: ' + (vsAI ? 'VS IA' : '2 JUGADORES'), W / 2, H / 2 + 30);
+  }
+  if (score1 >= WIN_SCORE || score2 >= WIN_SCORE) {
+    ctx.fillStyle = '#ff0';
+    ctx.font = '36px Courier New';
+    const winner = score1 >= WIN_SCORE ? '¡JUGADOR 1 GANA!' : (vsAI ? '¡LA IA GANA!' : '¡JUGADOR 2 GANA!');
+    ctx.fillText(winner, W / 2, H / 2);
+    ctx.font = '20px Courier New';
+    ctx.fillText('Presiona ESPACIO para reiniciar', W / 2, H / 2 + 40);
+  }
+}
+
+function toggleMode() {
+  vsAI = !vsAI;
+  document.getElementById('modeBtn').textContent = vsAI ? 'Cambiar Modo: VS IA' : 'Cambiar Modo: 2 JUGADORES';
+  const p2Controls = document.getElementById('p2Controls');
+  p2Controls.style.display = vsAI ? 'none' : 'flex';
+}
+
+document.getElementById('modeBtn').addEventListener('click', toggleMode);
+
+canvas.addEventListener('touchstart', () => {
+  if (paused) paused = false;
+});
+canvas.addEventListener('click', () => {
+  if (paused) paused = false;
+});
+
+function loop() {
+  ctx.fillStyle = 'rgba(5, 5, 16, 0.3)';
+  ctx.fillRect(0, 0, W, H);
+
+  if (!paused) {
+    paddle1.dy = 0;
+    if (keys['w'] || keys['W']) paddle1.dy = -paddle1.speed;
+    if (keys['s'] || keys['S']) paddle1.dy = paddle1.speed;
+
+    if (vsAI) {
+      updateAI();
+    } else {
+      paddle2.dy = 0;
+      if (keys['ArrowUp']) paddle2.dy = -paddle2.speed;
+      if (keys['ArrowDown']) paddle2.dy = paddle2.speed;
+    }
+
+    paddle1.update();
+    paddle2.update();
+    ball.update();
+    checkCollision();
+    updateParticles();
+  }
+
+  paddle1.draw();
+  paddle2.draw();
+  ball.draw();
+  drawParticles();
+  drawUI();
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
